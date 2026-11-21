@@ -541,14 +541,26 @@ function prioritizeUserNpmGlobalBin(env: NodeJS.ProcessEnv): { key: string; valu
  */
 export function handleShellConnection(
   ws: WebSocket,
-  dependencies: ShellWebSocketDependencies
+  dependencies: ShellWebSocketDependencies,
+  checkHostAccess?: () => void,
 ): void {
   console.log('[INFO] Shell websocket connected');
 
+  // A member terminal belongs to its socket. In particular it can never
+  // resume the administrator's cached provider terminal for the same project.
+  const sessions = checkHostAccess ? new Map<string, PtySessionEntry>() : ptySessionsMap;
   let shellProcess: IPty | null = null;
   let ptySessionKey: string | null = null;
   let urlDetectionBuffer = '';
   const announcedAuthUrls = new Set<string>();
+  const accessCheck = checkHostAccess ? setInterval(() => {
+    try {
+      checkHostAccess();
+    } catch {
+      shellProcess?.kill();
+      ws.close(1008, 'Workspace access revoked');
+    }
+  }, 2_000) : undefined;
 
   ws.on('message', async (rawMessage) => {
     try {
@@ -557,6 +569,7 @@ export function handleShellConnection(
         throw new Error('Invalid websocket payload');
       }
 
+      checkHostAccess?.();
       if (data.type === 'init') {
         const projectPath = readString(data.projectPath, process.cwd());
         const sessionId = readString(data.sessionId) || null;
@@ -586,18 +599,18 @@ export function handleShellConnection(
         ptySessionKey = `${projectPath}_${sessionId ?? 'default'}${commandSuffix}`;
 
         if (isLoginCommand || forceRestart) {
-          const oldSession = ptySessionsMap.get(ptySessionKey);
+          const oldSession = sessions.get(ptySessionKey);
           if (oldSession) {
             if (oldSession.timeoutId) {
               clearTimeout(oldSession.timeoutId);
             }
             oldSession.pty.kill();
-            ptySessionsMap.delete(ptySessionKey);
+            sessions.delete(ptySessionKey);
           }
         }
 
         const existingSession =
-          isLoginCommand || forceRestart ? null : ptySessionsMap.get(ptySessionKey);
+          isLoginCommand || forceRestart ? null : sessions.get(ptySessionKey);
         if (existingSession) {
           shellProcess = existingSession.pty;
           if (existingSession.timeoutId) {
@@ -652,9 +665,9 @@ export function handleShellConnection(
         );
         const resumeSessionId = resolveResumeSessionId(data, dependencies);
         const claudeColorScheme = claudeFollowsAppTheme ? colorScheme : null;
-        const shell = os.platform() === 'win32' ? 'powershell.exe' : 'bash';
-        const shellArgs =
-          os.platform() === 'win32' ? ['-Command', shellCommand] : ['-c', shellCommand];
+        const isWindows = os.platform() === 'win32';
+        const shell = isWindows ? 'powershell.exe' : 'bash';
+        const shellArgs = isWindows ? ['-Command', shellCommand] : ['-c', shellCommand];
         const termCols = readNumber(data.cols, 80);
         const termRows = readNumber(data.rows, 24);
         const prioritizedPath = prioritizeUserNpmGlobalBin(process.env);
@@ -677,7 +690,8 @@ export function handleShellConnection(
           },
         });
 
-        ptySessionsMap.set(ptySessionKey, {
+        const spawnedPty = shellProcess;
+        sessions.set(ptySessionKey, {
           pty: shellProcess,
           ws,
           buffer: [],
@@ -692,8 +706,8 @@ export function handleShellConnection(
             return;
           }
 
-          const session = ptySessionsMap.get(ptySessionKey);
-          if (!session) {
+          const session = sessions.get(ptySessionKey);
+          if (!session || session.pty !== spawnedPty) {
             return;
           }
 
@@ -768,8 +782,8 @@ export function handleShellConnection(
             return;
           }
 
-          const session = ptySessionsMap.get(ptySessionKey);
-          if (session && session.pty !== shellProcess) {
+          const session = sessions.get(ptySessionKey);
+          if (session?.pty !== spawnedPty) {
             return;
           }
 
@@ -788,7 +802,7 @@ export function handleShellConnection(
             clearTimeout(session.timeoutId);
           }
 
-          ptySessionsMap.delete(ptySessionKey);
+          sessions.delete(ptySessionKey);
           shellProcess = null;
         });
 
@@ -844,11 +858,12 @@ export function handleShellConnection(
   });
 
   ws.on('close', () => {
+    if (accessCheck) clearInterval(accessCheck);
     if (!ptySessionKey) {
       return;
     }
 
-    const session = ptySessionsMap.get(ptySessionKey);
+    const session = sessions.get(ptySessionKey);
     if (!session) {
       return;
     }
@@ -859,6 +874,12 @@ export function handleShellConnection(
       return;
     }
 
+    if (checkHostAccess) {
+      sessions.delete(ptySessionKey);
+      session.pty.kill();
+      return;
+    }
+
     session.ws = null;
     if (session.timeoutId) {
       clearTimeout(session.timeoutId);
@@ -866,12 +887,12 @@ export function handleShellConnection(
     session.timeoutId = setTimeout(() => {
       // A reconnect may win just as this timer becomes runnable. Re-check the
       // active socket so a queued cleanup can never kill a reattached PTY.
-      if (ptySessionsMap.get(ptySessionKey as string) !== session || session.ws !== null) {
+      if (sessions.get(ptySessionKey as string) !== session || session.ws !== null) {
         return;
       }
 
       session.pty.kill();
-      ptySessionsMap.delete(ptySessionKey as string);
+      sessions.delete(ptySessionKey as string);
     }, PTY_SESSION_TIMEOUT);
   });
 

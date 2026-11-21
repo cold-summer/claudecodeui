@@ -16,6 +16,7 @@ type WorkspaceHeaderProps = {
   selectedSession: ProjectSession | null;
   shouldShowTasksTab: boolean;
   shouldShowBrowserTab: boolean;
+  chatOnly?: boolean;
   isMobile: boolean;
   onMenuClick: () => void;
   /** Persists a new title for a session; resolves false when the backend refuses it. */
@@ -30,6 +31,7 @@ export default function WorkspaceHeader({
   selectedSession,
   shouldShowTasksTab,
   shouldShowBrowserTab,
+  chatOnly,
   isMobile,
   onMenuClick,
   onRenameSession,
@@ -128,6 +130,7 @@ export default function WorkspaceHeader({
                 setActiveTab={setActiveTab}
                 shouldShowTasksTab={shouldShowTasksTab}
                 shouldShowBrowserTab={shouldShowBrowserTab}
+                chatOnly={chatOnly}
               />
             </div>
             {canScrollRight && (

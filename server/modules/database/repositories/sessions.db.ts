@@ -649,11 +649,13 @@ export const sessionsDb = {
    * and correctly ordered across projects instead of flattening only the
    * per-project slices already loaded by the client.
    */
-  getRecentSessionsPage(limit: number, offset: number): RecentSessionsPage {
+  getRecentSessionsPage(limit: number, offset: number, allowedPaths?: readonly string[]): RecentSessionsPage {
     const db = getConnection();
+    const scope = allowedPaths ? [JSON.stringify(allowedPaths)] : [];
     const visibilityClause = `
       sessions.isArchived = 0
       AND (projects.isArchived IS NULL OR projects.isArchived = 0)
+      ${allowedPaths ? 'AND sessions.project_path IN (SELECT value FROM json_each(?))' : ''}
     `;
     const rows = db
       .prepare(
@@ -665,7 +667,7 @@ export const sessionsDb = {
                   sessions.session_id DESC
          LIMIT ? OFFSET ?`
       )
-      .all(limit, offset) as SessionRow[];
+      .all(...scope, limit, offset) as SessionRow[];
     const countRow = db
       .prepare(
         `SELECT COUNT(*) AS count
@@ -673,7 +675,7 @@ export const sessionsDb = {
          LEFT JOIN projects ON projects.project_path = sessions.project_path
          WHERE ${visibilityClause}`
       )
-      .get() as { count: number } | undefined;
+      .get(...scope) as { count: number } | undefined;
 
     return {
       sessions: normalizeSessionRows(rows),

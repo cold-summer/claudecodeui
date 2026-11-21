@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import type { WebSocket } from 'ws';
 
-import { sessionsDb } from '@/modules/database/index.js';
+import { sessionsDb, userDb } from '@/modules/database/index.js';
 import {
   MAX_CONCURRENT_SIDE_QUESTIONS_PER_SESSION,
   providerCapabilitiesService,
@@ -25,6 +25,7 @@ import type {
   LLMProvider,
   ProviderPermissionDecision,
   ProviderRuntimeWriter,
+  RealtimeClientConnection,
   SideQuestion,
   SideQuestionEvent,
   SideQuestionRuntime,
@@ -918,12 +919,32 @@ export function handleChatConnection(
   dependencies: ChatWebSocketDependencies
 ): void {
   console.log('[INFO] Chat WebSocket connected');
-  connectedClients.add(ws);
-
   const userId = readRequestUserId(request);
+  const scopedUserId = request.user?.role === 'member' && typeof userId === 'number' ? userId : null;
+  // Limit global sidebar broadcasts for a member while leaving direct
+  // subscriptions and provider runs on the same socket as for administrators.
+  const broadcastClient: RealtimeClientConnection = scopedUserId !== null
+    ? {
+        get readyState() { return ws.readyState; },
+        send(payload) {
+          const event = JSON.parse(payload) as { kind?: string; sessionId?: string };
+          if (event.kind === 'loading_progress') return;
+          if (event.kind === 'session_upserted' && event.sessionId) {
+            const projectPath = sessionsDb.getSessionById(event.sessionId)?.project_path;
+            if (!projectPath || !userDb.getMemberDirectories(scopedUserId).includes(projectPath)) return;
+          }
+          ws.send(payload);
+        },
+      }
+    : ws;
+  connectedClients.add(broadcastClient);
 
   ws.on('message', async (rawMessage) => {
     try {
+      if (scopedUserId !== null && userDb.getUserById(scopedUserId)?.host_workspace_access !== 1) {
+        ws.close(1008, 'Workspace access revoked');
+        return;
+      }
       const parsed = parseIncomingJsonObject(rawMessage);
       if (!parsed) {
         throw new Error('Invalid websocket payload');
@@ -970,6 +991,6 @@ export function handleChatConnection(
 
   ws.on('close', () => {
     console.log('[INFO] Chat client disconnected');
-    connectedClients.delete(ws);
+    connectedClients.delete(broadcastClient);
   });
 }

@@ -21,6 +21,7 @@ registerPermissionPanel('AskUserQuestion', AskUserQuestionPanel);
 registerPermissionPanel(MCP_ELICITATION_TOOL_NAME, McpElicitationPanel);
 
 type PermissionRequestsBannerProps = {
+  memberWorkspace?: boolean;
   pendingPermissionRequests: PendingPermissionRequest[];
   /** Name of the agent asking, shown in interactive panels such as the question panel. */
   providerLabel?: string;
@@ -56,6 +57,7 @@ const PatternList = ({ patterns }: { patterns: string[] }) => (
  * the Claude settings.
  */
 export default function PermissionRequestsBanner({
+  memberWorkspace,
   pendingPermissionRequests,
   providerLabel,
   handlePermissionDecision,
@@ -89,7 +91,7 @@ export default function PermissionRequestsBanner({
         const rawInput = formatToolInputForDisplay(request.input);
         const alwaysPatterns = readContextPatterns(request.context, 'always');
         const requestedPatterns = readContextPatterns(request.context, 'patterns') ?? [];
-        const permissionEntry = alwaysPatterns ? null : buildClaudeToolPermissionEntry(request.toolName, rawInput);
+        const permissionEntry = memberWorkspace || alwaysPatterns ? null : buildClaudeToolPermissionEntry(request.toolName, rawInput);
         const settings = getClaudeSettings();
         const alreadyAllowed = permissionEntry ? settings.allowedTools.includes(permissionEntry) : false;
         const rememberLabel = alreadyAllowed ? 'Allow (saved)' : 'Allow & remember';
@@ -153,7 +155,7 @@ export default function PermissionRequestsBanner({
               >
                 Deny
               </ConfirmationAction>
-              {alwaysPatterns ? (
+              {!memberWorkspace && (alwaysPatterns ? (
                 <ConfirmationAction
                   variant="outline"
                   onClick={() => handlePermissionDecision(request.requestId, { allow: true, rememberEntry: 'always' })}
@@ -173,7 +175,7 @@ export default function PermissionRequestsBanner({
                 >
                   {rememberLabel}
                 </ConfirmationAction>
-              )}
+              ))}
               <ConfirmationAction
                 variant="default"
                 onClick={() => handlePermissionDecision(request.requestId, { allow: true })}

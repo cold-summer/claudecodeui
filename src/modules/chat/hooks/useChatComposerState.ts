@@ -50,6 +50,7 @@ type UseChatComposerStateArgs = {
    * is one, otherwise the user's per-provider selection.
    */
   currentProviderModel: string;
+  isModelRequired?: boolean;
   currentProviderEffort: string;
   isLoading: boolean;
   processingSessions?: SessionActivityMap;
@@ -264,6 +265,7 @@ export function useChatComposerState({
   cyclePermissionMode,
   resolvePermissionModeForProvider,
   currentProviderModel,
+  isModelRequired = false,
   currentProviderEffort,
   isLoading,
   processingSessions,
@@ -1156,6 +1158,7 @@ export function useChatComposerState({
       submitOptions?: SubmitOptions,
     ) => {
       event.preventDefault();
+      if (isModelRequired) return;
       const currentInput = queuedSubmission?.content ?? inputValueRef.current;
       const currentAttachments = queuedSubmission?.attachments ?? attachedFiles;
       const previouslyUploadedAttachments = queuedSubmission?.uploadedAttachments ?? [];
@@ -1472,6 +1475,7 @@ export function useChatComposerState({
       editingAnchorId,
       executeCommand,
       isLoading,
+      isModelRequired,
       onSessionProcessing,
       onSessionEstablished,
       provider,

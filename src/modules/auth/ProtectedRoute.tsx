@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { Fragment, type ReactNode } from 'react';
 
 import { IS_PLATFORM } from '@/shared/utils';
 import { useAuth } from '@/modules/auth/context/AuthContext';
@@ -35,9 +35,9 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
     return <LoginForm />;
   }
 
-  if (!hasCompletedOnboarding) {
+  if (user.role !== 'member' && !hasCompletedOnboarding) {
     return <Onboarding onComplete={refreshOnboardingStatus} />;
   }
 
-  return <>{children}</>;
+  return <Fragment key={user.id ?? user.username}>{children}</Fragment>;
 }

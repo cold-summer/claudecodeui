@@ -64,6 +64,7 @@ type ChatComposerProps = {
   /** Whether the viewed session can currently be interrupted; threaded to the send menu's Stop row, which otherwise looks actionable while `onAbortSession` already no-ops. Defaults to true so existing callers and tests, which never had a non-interruptible turn, keep working. */
   canAbortSession?: boolean;
   permissionMode: PermissionMode;
+  memberWorkspace?: boolean;
   availablePermissionModes: PermissionMode[];
   onSelectPermissionMode: (mode: PermissionMode) => void;
   providerLabel: string;
@@ -74,6 +75,7 @@ type ChatComposerProps = {
   availableModelOptions: ProviderModelOption[];
   onSelectModel: (model: string) => void;
   modelsLoading: boolean;
+  isModelRequired?: boolean;
   tokenBudget: Record<string, unknown> | null;
   onShowTokenUsage: () => void;
   /** Clears the session's context; absent when the session cannot be cleared. */
@@ -154,6 +156,7 @@ export default function ChatComposer({
   onAbortSession,
   canAbortSession = true,
   permissionMode,
+  memberWorkspace,
   availablePermissionModes,
   onSelectPermissionMode,
   providerLabel,
@@ -164,6 +167,7 @@ export default function ChatComposer({
   availableModelOptions,
   onSelectModel,
   modelsLoading,
+  isModelRequired = false,
   tokenBudget,
   onClearContext,
   onShowTokenUsage,
@@ -312,6 +316,7 @@ export default function ChatComposer({
       {pendingPermissionRequests.length > 0 && (
         <div className="mx-auto mb-3 max-w-[54.25rem]">
           <PermissionRequestsBanner
+            memberWorkspace={memberWorkspace}
             pendingPermissionRequests={pendingPermissionRequests}
             providerLabel={providerLabel}
             handlePermissionDecision={handlePermissionDecision}
@@ -559,6 +564,7 @@ export default function ChatComposer({
             />
 
             <ComposerPermissionMenu
+              memberWorkspace={memberWorkspace}
               permissionMode={permissionMode}
               permissionModes={availablePermissionModes}
               onSelectPermissionMode={onSelectPermissionMode}
@@ -614,7 +620,7 @@ export default function ChatComposer({
                       ? !isRecording && !canAbortSession
                       : isRecording
                         ? false
-                        : !hasAnyInput
+                        : isModelRequired || !hasAnyInput
                 }
                 aria-label={submitAriaLabel}
                 title={submitAriaLabel}

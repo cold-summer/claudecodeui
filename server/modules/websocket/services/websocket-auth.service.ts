@@ -4,7 +4,7 @@ import type { AuthenticatedWebSocketRequest } from '@/shared/types.js';
 
 type WebSocketAuthDependencies = {
   isPlatform: boolean;
-  authenticateWebSocket: (token: string | null) => {
+  authenticateWebSocket: (token: string | null, pathname?: string) => {
     id?: string | number;
     userId?: string | number;
     username?: string;
@@ -47,7 +47,7 @@ export function verifyWebSocketClient(
     request.headers.authorization?.split(' ')[1] ??
     null;
 
-  const user = dependencies.authenticateWebSocket(token);
+  const user = dependencies.authenticateWebSocket(token, upgradeUrl.pathname);
   if (!user) {
     console.log('[WARN] WebSocket authentication failed');
     return false;

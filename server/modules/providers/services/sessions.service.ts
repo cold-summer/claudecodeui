@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 
-import { projectsDb, sessionsDb } from '@/modules/database/index.js';
+import { memberChatTurnsDb, projectsDb, sessionsDb } from '@/modules/database/index.js';
 import { broadcastSessionUpserted, chatRunRegistry } from '@/modules/websocket/index.js';
 import { providerRegistry } from '@/modules/providers/provider.registry.js';
 import { listBusyClaudeCliSessions } from '@/modules/providers/services/claude-cli-liveness.service.js';
@@ -293,7 +293,9 @@ export const sessionsService = {
    * This is intentionally status-only: callers that only need sidebar activity
    * indicators should not attach to chat streams or request replayed messages.
    */
-  async listRunningSessions(): Promise<RunningSessionEntry[]> {
+  async listRunningSessions(
+    { allowedPaths, viewedSessionId }: { allowedPaths?: ReadonlySet<string>; viewedSessionId?: string } = {},
+  ): Promise<RunningSessionEntry[]> {
     const entries: RunningSessionEntry[] = chatRunRegistry.listRunningRuns();
     const runningById = new Map(entries.map((entry) => [entry.sessionId, entry]));
 
@@ -341,14 +343,18 @@ export const sessionsService = {
       runningById.set(session.session_id, entries[entries.length - 1]);
     }
 
-    return entries;
+    return allowedPaths ? entries.filter(({ sessionId }) => {
+      if (sessionId === viewedSessionId) return true;
+      const projectPath = sessionsDb.getSessionById(sessionId)?.project_path;
+      return projectPath != null && allowedPaths.has(projectPath);
+    }) : entries;
   },
 
   /**
    * Returns the active conversation feed in true global activity order.
    */
-  listRecentSessions(limit: number, offset: number): RecentSessionsPage {
-    const page = sessionsDb.getRecentSessionsPage(limit, offset);
+  listRecentSessions(limit: number, offset: number, allowedPaths?: readonly string[]): RecentSessionsPage {
+    const page = sessionsDb.getRecentSessionsPage(limit, offset, allowedPaths);
     const projectCache = new Map<string, ReturnType<typeof projectsDb.getProjectPath>>();
     const conversations = page.sessions.map((session) => {
       const projectPath = session.project_path?.trim() ? session.project_path : null;
@@ -676,7 +682,7 @@ export const sessionsService = {
 
   async fetchHistory(
     sessionId: string,
-    options: Pick<FetchHistoryOptions, 'limit' | 'offset'> = {},
+    options: Pick<FetchHistoryOptions, 'limit' | 'offset'> & { legacyMemberUserId?: number } = {},
   ): Promise<FetchHistoryResult> {
     const session = sessionsDb.getSessionById(sessionId);
     if (!session) {
@@ -690,11 +696,20 @@ export const sessionsService = {
     const projectPath = session.project_path ?? '';
     const requestedLimit = options.limit ?? null;
     const requestedOffset = options.offset ?? 0;
+    const legacyMessages: NormalizedMessage[] = options.legacyMemberUserId === undefined ? []
+      : memberChatTurnsDb.listTranscript(options.legacyMemberUserId, sessionId).flatMap((turn) => {
+          const id = `member-turn-${turn.id}`;
+          const timestamp = turn.recordedAt ?? session.created_at ?? new Date(0).toISOString();
+          return [
+            { kind: 'text', id, sessionId, provider, timestamp, role: 'user', content: turn.prompt },
+            { kind: 'text', id: `${id}-reply`, sessionId, provider, timestamp, role: 'assistant', content: turn.reply },
+          ];
+        });
 
     // A session whose context was cleared reads as one conversation: every
     // earlier part, each closed by its marker, then whatever has run since.
     const clearedSegments = sessionsDb.getClearedContextSegments(sessionId);
-    if (clearedSegments.length > 0) {
+    if (clearedSegments.length > 0 || legacyMessages.length > 0) {
       const messages: NormalizedMessage[] = [];
       for (const segment of clearedSegments) {
         messages.push(...await readClearedContextSegment(sessionId, provider, projectPath, segment));
@@ -710,6 +725,12 @@ export const sessionsService = {
         tokenUsage = current.tokenUsage;
       }
 
+      // The earlier gateway turns were private to the member. We render them
+      // in their original place without exposing them as native edit anchors.
+      if (legacyMessages.length) {
+        messages.push(...legacyMessages);
+        messages.sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp));
+      }
       const { page, hasMore } = sliceTailPage(messages, requestedLimit, Math.max(0, requestedOffset));
       return {
         messages: page.map((message) => ({ ...message, sessionId })),
@@ -799,8 +820,10 @@ export const sessionsService = {
    * Returns archived sessions with enough project metadata for the sidebar to
    * group, filter, open, and restore them without a per-row follow-up query.
    */
-  listArchivedSessions(): ArchivedSessionListItem[] {
-    const archivedSessions = sessionsDb.getArchivedSessions();
+  listArchivedSessions(allowedPaths?: ReadonlySet<string>): ArchivedSessionListItem[] {
+    const archivedSessions = sessionsDb.getArchivedSessions().filter(
+      (session) => !allowedPaths || (session.project_path !== null && allowedPaths.has(session.project_path)),
+    );
     const projectCache = new Map<string, ReturnType<typeof projectsDb.getProjectPath>>();
 
     return archivedSessions.map((session) => {

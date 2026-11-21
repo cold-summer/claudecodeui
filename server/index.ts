@@ -22,11 +22,17 @@ import { getConnectableHost } from '../shared/networkHosts.js';
 
 import { createGitModule } from './modules/git/index.js';
 import {
+    authenticateAdministrator,
     authenticateToken,
     authenticateWebSocket,
     authRoutes,
     validateApiKey,
+    getWorkspaceAccount,
 } from './modules/auth/index.js';
+import {
+    assignedProjectsRoutes, directoryAccountsRoutes, handleMemberChatConnection,
+    memberWorkspaceRoutes, requireHostWorkspace,
+} from './modules/directory-access/index.js';
 import { taskmasterRoutes } from './modules/taskmaster/index.js';
 import { commandsRoutes } from './modules/commands/index.js';
 import { settingsRoutes } from './modules/settings/index.js';
@@ -123,6 +129,7 @@ createWebSocketServer(server, {
         },
     },
     getPluginPort,
+    memberChat: IS_PLATFORM ? undefined : handleMemberChatConnection,
 });
 
 app.use(cors({ exposedHeaders: ['X-Refreshed-Token', 'X-Auth-Error'] }));
@@ -150,6 +157,20 @@ function createBodyParsers(limit: string) {
 const parseAuthenticatedBody = createBodyParsers('50mb');
 const parsePublicBody = createBodyParsers('1mb');
 
+// Members without host workspace access use the sandboxed project and chat routes.
+function useMemberWorkspace(routes: express.Router): express.RequestHandler {
+    const memberRouter = express.Router();
+    memberRouter.use(parsePublicBody, routes);
+    memberRouter.use((_req, res) => res.status(403).json({ error: 'Administrator access required' }));
+    return (req, res, next) => {
+        const user = getWorkspaceAccount(req);
+        if (IS_PLATFORM || user?.role !== 'member' || user.host_workspace_access === 1) return next();
+        res.set('Cache-Control', 'private, no-store');
+        return memberRouter(req, res, next);
+    };
+}
+
+
 // Public health check endpoint (no authentication required)
 app.get('/health', (req, res) => {
     res.json({
@@ -166,54 +187,59 @@ app.use('/api', validateApiKey);
 // Authentication routes (public)
 app.use('/api/auth', parsePublicBody, authRoutes);
 
+if (!IS_PLATFORM) {
+    app.use('/api/directory-access/accounts', authenticateAdministrator, parsePublicBody, directoryAccountsRoutes);
+    app.use('/api/directory-access', authenticateToken, parsePublicBody, assignedProjectsRoutes);
+}
+
 // File Tree API Routes (protected)
-app.use('/api/file-tree', authenticateToken, parseAuthenticatedBody, fileTreeRoutes);
+app.use('/api/file-tree', authenticateToken, requireHostWorkspace, parseAuthenticatedBody, fileTreeRoutes);
 
 // Projects API Routes (protected)
-app.use('/api/projects', authenticateToken, parseAuthenticatedBody, projectModuleRoutes);
+app.use('/api/projects', authenticateToken, useMemberWorkspace(memberWorkspaceRoutes.projects), requireHostWorkspace, parseAuthenticatedBody, projectModuleRoutes);
 
 // Chat attachment upload/serving (global ~/.cloudcli/assets store, protected)
-app.use('/api/assets', authenticateToken, parseAuthenticatedBody, assetsRoutes);
+app.use('/api/assets', authenticateToken, requireHostWorkspace, parseAuthenticatedBody, assetsRoutes);
 
 // Git API Routes (protected)
-app.use('/api/git', authenticateToken, parseAuthenticatedBody, gitRoutes);
+app.use('/api/git', authenticateToken, requireHostWorkspace, parseAuthenticatedBody, gitRoutes);
 
 // Git worktree management (protected)
-app.use('/api/worktrees', authenticateToken, parseAuthenticatedBody, worktreesRoutes);
+app.use('/api/worktrees', authenticateToken, requireHostWorkspace, parseAuthenticatedBody, worktreesRoutes);
 
 // TaskMaster API Routes (protected)
-app.use('/api/taskmaster', authenticateToken, parseAuthenticatedBody, taskmasterRoutes);
+app.use('/api/taskmaster', authenticateToken, requireHostWorkspace, parseAuthenticatedBody, taskmasterRoutes);
 
 // Commands API Routes (protected)
-app.use('/api/commands', authenticateToken, parseAuthenticatedBody, commandsRoutes);
+app.use('/api/commands', authenticateToken, requireHostWorkspace, parseAuthenticatedBody, commandsRoutes);
 
 // Settings API Routes (protected)
-app.use('/api/settings', authenticateToken, parseAuthenticatedBody, settingsRoutes);
+app.use('/api/settings', authenticateAdministrator, parseAuthenticatedBody, settingsRoutes);
 
-app.use('/api/system', authenticateToken, parseAuthenticatedBody, systemRoutes);
+app.use('/api/system', authenticateAdministrator, parseAuthenticatedBody, systemRoutes);
 
-app.use('/api/notifications', authenticateToken, parseAuthenticatedBody, notificationRoutes);
+app.use('/api/notifications', authenticateAdministrator, parseAuthenticatedBody, notificationRoutes);
 
 // User API Routes (protected)
-app.use('/api/user', authenticateToken, parseAuthenticatedBody, userRoutes);
+app.use('/api/user', authenticateToken, requireHostWorkspace, parseAuthenticatedBody, userRoutes);
 
 // Plugins API Routes (protected)
-app.use('/api/plugins', authenticateToken, parseAuthenticatedBody, pluginsRoutes);
+app.use('/api/plugins', authenticateToken, requireHostWorkspace, parseAuthenticatedBody, pluginsRoutes);
 
 // Browser MCP bridge API (local token protected)
 app.use('/api/browser-use-mcp', parsePublicBody, browserUseMcpRoutes);
 
 // Browser API Routes (protected)
-app.use('/api/browser-use', authenticateToken, parseAuthenticatedBody, browserUseRoutes);
+app.use('/api/browser-use', authenticateToken, requireHostWorkspace, parseAuthenticatedBody, browserUseRoutes);
 
 // Unified provider MCP routes (protected)
-app.use('/api/providers', authenticateToken, parseAuthenticatedBody, providerRoutes);
-app.use('/api/scheduled-messages', authenticateToken, parseAuthenticatedBody, scheduledMessagesRoutes);
+app.use('/api/providers', authenticateToken, useMemberWorkspace(memberWorkspaceRoutes.sessions), requireHostWorkspace, parseAuthenticatedBody, providerRoutes);
+app.use('/api/scheduled-messages', authenticateToken, requireHostWorkspace, parseAuthenticatedBody, scheduledMessagesRoutes);
 
 // Agent API Routes (uses API key authentication)
 app.use('/api/agent', parsePublicBody, agentRoutes);
 
-app.use('/api/voice', authenticateToken, parseAuthenticatedBody, voiceRoutes);
+app.use('/api/voice', authenticateToken, requireHostWorkspace, parseAuthenticatedBody, voiceRoutes);
 
 // Serve public files (like api-docs.html)
 app.use(express.static(path.join(APP_ROOT, 'public')));

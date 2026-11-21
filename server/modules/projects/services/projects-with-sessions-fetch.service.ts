@@ -54,6 +54,7 @@ type GetProjectsWithSessionsOptions = {
   skipSynchronization?: boolean;
   sessionsLimit?: number;
   sessionsOffset?: number;
+  allowedProjectPaths?: ReadonlySet<string>;
 };
 
 type SessionPaginationOptions = {
@@ -180,21 +181,19 @@ function broadcastProgress(progress: ProgressUpdate) {
 }
 
 /**
- * Reads all projects from DB and returns normalized session summaries.
+ * Projects routes list the whole workspace. Directory Access supplies a scope
+ * to read only assigned projects, without synchronizing or broadcasting progress.
  */
 export async function getProjectsWithSessions(
   options: GetProjectsWithSessionsOptions = {}
 ): Promise<ProjectListItem[]> {
-  if (!options.skipSynchronization) {
+  const allowedProjectPaths = options.allowedProjectPaths;
+  if (!allowedProjectPaths && !options.skipSynchronization) {
     await sessionSynchronizerService.synchronizeSessions();
   }
 
-  const projectRows = projectsDb.getProjectPaths() as Array<{
-    project_id: string;
-    project_path: string;
-    custom_project_name?: string | null;
-    isStarred?: number;
-  }>;
+  const projectRows = projectsDb.getProjectPaths()
+    .filter((row) => !allowedProjectPaths || allowedProjectPaths.has(row.project_path));
   const totalProjects = projectRows.length;
   const projects: ProjectListItem[] = [];
   let processedProjects = 0;
@@ -205,7 +204,7 @@ export async function getProjectsWithSessions(
     const projectId = row.project_id;
     const projectPath = row.project_path;
 
-    broadcastProgress({
+    if (!allowedProjectPaths) broadcastProgress({
       phase: 'loading',
       current: processedProjects,
       total: totalProjects,
@@ -236,7 +235,7 @@ export async function getProjectsWithSessions(
     });
   }
 
-  broadcastProgress({
+  if (!allowedProjectPaths) broadcastProgress({
     phase: 'complete',
     current: totalProjects,
     total: totalProjects,
@@ -251,9 +250,10 @@ export async function getProjectsWithSessions(
  * conversation history in the archive view regardless of each session's flag.
  */
 export async function getArchivedProjectsWithSessions(
-  options: Pick<GetProjectsWithSessionsOptions, 'skipSynchronization'> = {},
+  options: Pick<GetProjectsWithSessionsOptions, 'skipSynchronization' | 'allowedProjectPaths'> = {},
 ): Promise<ArchivedProjectListItem[]> {
-  if (!options.skipSynchronization) {
+  const { allowedProjectPaths } = options;
+  if (!allowedProjectPaths && !options.skipSynchronization) {
     await sessionSynchronizerService.synchronizeSessions();
   }
 
@@ -267,6 +267,7 @@ export async function getArchivedProjectsWithSessions(
   const archivedProjects: ArchivedProjectListItem[] = [];
 
   for (const row of projectRows) {
+    if (allowedProjectPaths && !allowedProjectPaths.has(row.project_path)) continue;
     const displayName =
       row.custom_project_name && row.custom_project_name.trim().length > 0
         ? row.custom_project_name
@@ -293,7 +294,7 @@ export async function getArchivedProjectsWithSessions(
 }
 
 /**
- * Loads one paginated session slice for a specific project id.
+ * Loads one paginated session slice for Projects routes and Directory Access.
  */
 export async function getProjectSessionsPage(
   projectId: string,

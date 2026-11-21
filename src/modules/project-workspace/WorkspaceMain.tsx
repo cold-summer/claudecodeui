@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, type Dispatch, type SetStateAction, useState } from 'react';
 
+import { useAuth } from '@/modules/auth';
 import { ChatInterface } from '@/modules/chat';
 import { FileTree } from '@/modules/file-tree';
 import { StandaloneShell } from '@/modules/standalone-shell';
@@ -43,7 +44,7 @@ type WorkspaceMainProps = {
 function WorkspaceMain({
   selectedProject,
   selectedSession,
-  activeTab,
+  activeTab: requestedTab,
   setActiveTab,
   ws,
   sendMessage,
@@ -59,6 +60,10 @@ function WorkspaceMain({
   onProjectsRefresh,
   onRenameSession,
 }: WorkspaceMainProps) {
+  const { user } = useAuth();
+  const memberWorkspace = user?.role === 'member' && !user.hostWorkspaceAccess;
+  const chatOnly = memberWorkspace;
+  const activeTab = chatOnly ? 'chat' : requestedTab;
   const preferences = useUiPreferences();
   const { showRawParameters, showThinking, sendByCtrlEnter } = preferences;
 
@@ -70,8 +75,8 @@ function WorkspaceMain({
   // so that re-clicking the same folder is a new request the tree acts on.
   const [revealDirectory, setRevealDirectory] = useState<DirectoryRevealRequest | null>(null);
 
-  const shouldShowTasksTab = Boolean(tasksEnabled && isTaskMasterInstalled);
-  const shouldShowBrowserTab = browserUseEnabled;
+  const shouldShowTasksTab = !memberWorkspace && Boolean(tasksEnabled && isTaskMasterInstalled);
+  const shouldShowBrowserTab = !memberWorkspace && browserUseEnabled;
 
   const {
     editingFile,
@@ -150,6 +155,7 @@ function WorkspaceMain({
         selectedSession={selectedSession}
         shouldShowTasksTab={shouldShowTasksTab}
         shouldShowBrowserTab={shouldShowBrowserTab}
+        chatOnly={chatOnly}
         isMobile={isMobile}
         onMenuClick={onMenuClick}
         onRenameSession={onRenameSession}
@@ -161,6 +167,7 @@ function WorkspaceMain({
             <WorkspaceErrorBoundary showDetails>
               <ChatInterface
                 isActive={activeTab === 'chat'}
+                memberWorkspace={memberWorkspace}
                 selectedProject={selectedProject}
                 selectedSession={selectedSession}
                 ws={ws}

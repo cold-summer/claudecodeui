@@ -1,11 +1,12 @@
 import { AppError } from '@/shared/utils.js';
+import type { AccountRole } from '@/shared/types.js';
 
 type AuthUser = {
   id: number | bigint;
   username: string;
 };
 
-type AuthLoginUser = AuthUser & { password_hash: string };
+type AuthLoginUser = AuthUser & { password_hash: string; role?: AccountRole; host_workspace_access?: number };
 
 type AuthDependencies = {
   users: {
@@ -68,7 +69,7 @@ export function createAuthService(dependencies: AuthDependencies) {
       dependencies.transaction.begin();
       try {
         if (dependencies.users.hasUsers()) {
-          throw new AppError('User already exists. This is a single-user system.', {
+          throw new AppError('Initial account is already configured.', {
             code: 'AUTH_USER_ALREADY_CONFIGURED',
             statusCode: 403,
           });
@@ -82,7 +83,7 @@ export function createAuthService(dependencies: AuthDependencies) {
 
         return {
           success: true,
-          user: { id: user.id, username: user.username },
+          user: { id: user.id, username: user.username, role: 'admin' },
           token,
         };
       } catch (error) {
@@ -121,12 +122,19 @@ export function createAuthService(dependencies: AuthDependencies) {
       dependencies.users.updateLastLogin(numericUserId(user.id));
       return {
         success: true,
-        user: { id: user.id, username: user.username },
+        user: {
+          id: user.id, username: user.username, role: user.role ?? 'admin',
+          ...(user.host_workspace_access === 1 ? { hostWorkspaceAccess: true } : {}),
+        },
         token: dependencies.generateToken(user),
       };
     },
 
     getCurrentUser(user: unknown) {
+      if (typeof user === 'object' && user !== null && 'host_workspace_access' in user) {
+        const { host_workspace_access, ...publicFields } = user;
+        return { user: { ...publicFields, hostWorkspaceAccess: host_workspace_access === 1 } };
+      }
       return { user };
     },
 

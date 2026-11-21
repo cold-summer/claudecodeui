@@ -8,7 +8,11 @@ CREATE TABLE IF NOT EXISTS users (
     is_active BOOLEAN DEFAULT 1,
     git_name TEXT,
     git_email TEXT,
-    has_completed_onboarding BOOLEAN DEFAULT 0
+    has_completed_onboarding BOOLEAN DEFAULT 0,
+    role TEXT NOT NULL DEFAULT 'admin' CHECK (role IN ('admin', 'member')),
+    allowed_directories TEXT NOT NULL DEFAULT '[]',
+    allowed_models TEXT,
+    host_workspace_access INTEGER NOT NULL DEFAULT 0
 );
 `;
 
@@ -157,6 +161,20 @@ CREATE TABLE IF NOT EXISTS scan_state (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   last_scanned_at TIMESTAMP NULL
 );
+`;
+
+/** Created after the sessions migration so the parent table has its final primary key. */
+export const MEMBER_CHAT_TURNS_TABLE_SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS member_chat_turns (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    session_id TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
+    id INTEGER NOT NULL,
+    prompt TEXT NOT NULL,
+    reply TEXT NOT NULL,
+    recorded_at TEXT,
+    PRIMARY KEY (user_id, session_id, id)
+);
+CREATE INDEX IF NOT EXISTS idx_member_chat_session ON member_chat_turns(session_id);
 `;
 
 export const APP_CONFIG_TABLE_SCHEMA_SQL = `

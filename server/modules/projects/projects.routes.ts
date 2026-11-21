@@ -1,5 +1,6 @@
 import express from 'express';
 
+import { getSidebarProjectPaths } from '@/modules/auth/index.js';
 import { createProject, updateProjectDisplayName } from '@/modules/projects/services/project-management.service.js';
 import { createProjectCloneRouter } from '@/modules/projects/project-clone.routes.js';
 import { createPendingCloneRequests } from '@/modules/projects/services/project-clone-request.service.js';
@@ -70,6 +71,7 @@ router.get(
       skipSynchronization,
       sessionsLimit,
       sessionsOffset,
+      allowedProjectPaths: getSidebarProjectPaths(req),
     });
     res.json(projects);
   }),
@@ -77,8 +79,8 @@ router.get(
 
 router.get(
   '/archived',
-  asyncHandler(async (_req, res) => {
-    const projects = await getArchivedProjectsWithSessions();
+  asyncHandler(async (req, res) => {
+    const projects = await getArchivedProjectsWithSessions({ allowedProjectPaths: getSidebarProjectPaths(req) });
     res.json(createApiSuccessResponse({ projects }));
   }),
 );

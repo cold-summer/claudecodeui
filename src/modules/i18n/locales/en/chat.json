@@ -154,6 +154,14 @@
     },
     "technicalDetails": "Technical details"
   },
+  "memberPermissions": {
+    "bypassLabel": "No Confirmation",
+    "default": "Read project files automatically. Confirm writes and commands before they run.",
+    "acceptEdits": "Edit project files automatically. Confirm shell commands before they run.",
+    "bypassPermissions": "Run file actions and commands without confirmation inside the project sandbox.",
+    "auto": "Read and edit project files automatically. Shell commands are disabled.",
+    "plan": "Plan without using project tools."
+  },
   "voice": {
     "input": "Voice input",
     "stopRecording": "Stop recording",

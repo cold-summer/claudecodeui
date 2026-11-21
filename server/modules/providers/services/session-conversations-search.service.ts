@@ -58,6 +58,7 @@ export type SessionConversationSearchProgressUpdate = {
 type SearchSessionConversationsInput = {
   query: string;
   limit: number;
+  allowedPaths?: ReadonlySet<string>;
   signal?: AbortSignal;
   onTitleResults?: (results: SessionTitleSearchResult[]) => void;
   onProgress?: (update: SessionConversationSearchProgressUpdate) => void;
@@ -1149,6 +1150,7 @@ export async function searchConversations(
   onProjectResult: ((update: SessionConversationSearchProgressUpdate) => void) | null = null,
   signal: AbortSignal | null = null,
   onTitleResults: ((results: SessionTitleSearchResult[]) => void) | null = null,
+  allowedPaths?: ReadonlySet<string>,
 ): Promise<{
   results: ProjectConversationResult[];
   titleResults: SessionTitleSearchResult[];
@@ -1168,7 +1170,9 @@ export async function searchConversations(
     return { results: [], titleResults: [], totalMatches: 0, query: safeQuery };
   }
 
-  const activeSessions = sessionsDb.getAllSessions();
+  const activeSessions = sessionsDb.getAllSessions().filter(
+    (session) => !allowedPaths || (session.project_path !== null && allowedPaths.has(session.project_path)),
+  );
   const titleResults = findSessionTitleResults(activeSessions, safeQuery, safeLimit);
   onTitleResults?.(titleResults);
 
@@ -1303,6 +1307,13 @@ export async function searchConversations(
  * centralized in one place.
  */
 export const sessionConversationsSearchService = {
+  searchTitles(query: string, limit: number, allowedPaths: ReadonlySet<string>): SessionTitleSearchResult[] {
+    if (!query || allowedPaths.size === 0) return [];
+    const sessions = sessionsDb.getAllSessions().filter((session) =>
+      session.project_path !== null && allowedPaths.has(session.project_path));
+    return findSessionTitleResults(sessions, query, limit);
+  },
+
   /**
    * Streams progress updates while the search scans provider session logs.
    */
@@ -1313,6 +1324,7 @@ export const sessionConversationsSearchService = {
       input.onProgress ?? null,
       input.signal ?? null,
       input.onTitleResults ?? null,
+      input.allowedPaths,
     );
   },
 };

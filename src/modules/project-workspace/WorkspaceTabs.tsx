@@ -12,6 +12,7 @@ type WorkspaceTabsProps = {
   setActiveTab: Dispatch<SetStateAction<AppTab>>;
   shouldShowTasksTab: boolean;
   shouldShowBrowserTab: boolean;
+  chatOnly?: boolean;
 };
 
 type BuiltInTab = {
@@ -58,6 +59,7 @@ export default function WorkspaceTabs({
   setActiveTab,
   shouldShowTasksTab,
   shouldShowBrowserTab,
+  chatOnly,
 }: WorkspaceTabsProps) {
   const { t } = useTranslation();
   const { plugins } = usePlugins();
@@ -68,7 +70,7 @@ export default function WorkspaceTabs({
     ...(shouldShowTasksTab ? [TASKS_TAB] : []),
   ];
 
-  const pluginTabs: PluginTab[] = plugins
+  const pluginTabs: PluginTab[] = (chatOnly ? [] : plugins)
     .filter((p) => p.enabled)
     .map((p) => ({
       kind: 'plugin',
@@ -84,7 +86,7 @@ export default function WorkspaceTabs({
     const tabList = event.currentTarget.closest('[role="tablist"]');
     if (!tabList) return;
 
-    const tabButtons = Array.from(tabList.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+    const tabButtons = Array.from(tabList.querySelectorAll<HTMLButtonElement>('[role="tab"]:not([disabled])'));
     const currentIndex = tabButtons.indexOf(event.currentTarget);
     let nextIndex: number;
 
@@ -119,6 +121,7 @@ export default function WorkspaceTabs({
                 role="tab"
                 aria-label={displayLabel}
                 aria-selected={isActive}
+                disabled={chatOnly && tab.id !== 'chat'}
                 tabIndex={isActive ? 0 : -1}
                 isActive={isActive}
                 onClick={() => setActiveTab(tab.id)}

@@ -16,8 +16,9 @@ const MemoizedProjectWorkspaceRouteContent = memo(ProjectWorkspaceRouteContent);
 
 /** This module's only public export: rendered by App for the "/" and "/session/:sessionId" routes. */
 export default function ProjectWorkspaceRoute() {
+  const { sessionId } = useParams<{ sessionId?: string }>();
   return (
-    <SessionProtectionProvider>
+    <SessionProtectionProvider viewedSessionId={sessionId}>
       <PaletteOpsProvider>
         <MemoizedProjectWorkspaceRouteContent />
       </PaletteOpsProvider>

@@ -80,6 +80,7 @@ const getAppearance = (mode: PermissionMode | string): ModeAppearance =>
 
 type ComposerPermissionMenuProps = {
   permissionMode: PermissionMode;
+  memberWorkspace?: boolean;
   /** Modes the active provider supports, in the order the backend reports them. */
   permissionModes: PermissionMode[];
   onSelectPermissionMode: (mode: PermissionMode) => void;
@@ -92,6 +93,7 @@ type ComposerPermissionMenuProps = {
  */
 function ComposerPermissionMenu({
   permissionMode,
+  memberWorkspace,
   permissionModes,
   onSelectPermissionMode,
   providerLabel,
@@ -100,8 +102,12 @@ function ComposerPermissionMenu({
   const [isOpen, setIsOpen] = useState(false);
   const close = useCallback(() => setIsOpen(false), []);
   const { triggerRef, menuRef, anchor, updateAnchor } = useComposerMenuAnchor(isOpen, close, 22 * 16);
-  const modeLabel = (mode: PermissionMode) =>
-    t(`codex.modes.${mode}`, { defaultValue: getAppearance(mode).label || mode });
+  const modeLabel = (mode: PermissionMode) => {
+    if (memberWorkspace && mode === 'bypassPermissions') {
+      return t('memberPermissions.bypassLabel', { defaultValue: 'No Confirmation' });
+    }
+    return t(`codex.modes.${mode}`, { defaultValue: getAppearance(mode).label || mode });
+  };
   const activeModeLabel = modeLabel(permissionMode);
   // The name is shown only where the composer has room for it, so it never
   // pushes the model menu and the send button onto a second row. Plan mode,
@@ -161,7 +167,7 @@ function ComposerPermissionMenu({
                 key={mode}
                 icon={<ModeIcon className="h-4 w-4" />}
                 label={modeLabel(mode)}
-                description={t(`codex.descriptions.${mode}`, { defaultValue: '' }) || undefined}
+                description={t(`${memberWorkspace ? 'memberPermissions' : 'codex.descriptions'}.${mode}`, { defaultValue: '' }) || undefined}
                 isSelected={mode === permissionMode}
                 onSelect={() => {
                   onSelectPermissionMode(mode);

@@ -33,6 +33,7 @@ import CommandResultModal from '@/modules/chat/modals/CommandResultModal';
 
 type ChatInterfaceProps = {
   isActive: boolean;
+  memberWorkspace?: boolean;
   selectedProject: Project | null;
   selectedSession: ProjectSession | null;
   ws: WebSocket | null;
@@ -57,6 +58,7 @@ type ChatInterfaceProps = {
  */
 function ChatInterface({
   isActive,
+  memberWorkspace,
   selectedProject,
   selectedSession,
   ws,
@@ -129,9 +131,12 @@ function ChatInterface({
     supportsSteering,
     supportsContextClearing,
   } = useChatProviderState({
+    memberWorkspace,
     selectedSession,
     selectedProject,
   });
+
+  const isModelRequired = Boolean(memberWorkspace && !currentProviderModel);
 
   const {
     chatMessages,
@@ -290,6 +295,7 @@ function ChatInterface({
     beginEditMessage,
     cancelEditMessage,
   } = useChatComposerState({
+    isModelRequired,
     selectedProject,
     selectedSession,
     currentSessionId,
@@ -502,6 +508,7 @@ function ChatInterface({
         <MarkdownWorkspaceContext.Provider value={markdownWorkspaceValue}>
           <TranscriptSessionContext.Provider value={transcriptSessionValue}>
             <ChatMessagesPane
+              memberWorkspace={memberWorkspace}
               scrollContainerRef={scrollContainerRef}
               // Not redundant with the `scroll` listener. A first page is 20 rows,
               // tool results fold into their calls, and the "load earlier" link is
@@ -575,7 +582,14 @@ function ChatInterface({
             </div>
           )}
 
+          {isModelRequired && !providerModelsLoading && (
+            <p role="status" className="mx-auto px-4 pb-2 text-center text-sm text-muted-foreground">
+              {t('providerSelection.noAssignedModels', { defaultValue: 'No models are assigned to this account.' })}
+            </p>
+          )}
           <ChatComposer
+          memberWorkspace={memberWorkspace}
+          isModelRequired={isModelRequired}
           pendingPermissionRequests={pendingPermissionRequests}
           handlePermissionDecision={handlePermissionDecision}
           handleGrantToolPermission={handleGrantToolPermission}

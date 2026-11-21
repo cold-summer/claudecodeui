@@ -48,6 +48,7 @@ function modelSearchFilter(value: string, search: string): number {
 }
 
 type ProviderSelectionEmptyStateProps = {
+  memberWorkspace?: boolean;
   selectedSession: ProjectSession | null;
   currentSessionId: string | null;
   provider: LLMProvider;
@@ -86,6 +87,7 @@ function getProviderDisplayName(p: LLMProvider) {
  * the user can pick a provider, model and permission mode before their first turn.
  */
 export default function ProviderSelectionEmptyState({
+  memberWorkspace,
   selectedSession,
   currentSessionId,
   provider,
@@ -123,13 +125,17 @@ export default function ProviderSelectionEmptyState({
 
   /** One collapsible branch per provider, in the order the picker lists them. */
   const visibleProviderGroups = useMemo<ModelGroup[]>(
-    () => PROVIDER_META.map((meta) => ({
-      key: meta.id,
-      provider: meta.id,
-      name: meta.name,
-      models: providerModelCatalog[meta.id]?.OPTIONS ?? [],
-    })),
-    [providerModelCatalog],
+    () => PROVIDER_META
+      .filter((meta) => !memberWorkspace || Boolean(providerModelCatalog[meta.id]?.OPTIONS.length))
+      .map((meta) => ({
+        key: meta.id,
+        provider: meta.id,
+        name: memberWorkspace && meta.id === "opencode"
+          ? t("providerSelection.otherModels", { defaultValue: "Other models" })
+          : meta.name,
+        models: providerModelCatalog[meta.id]?.OPTIONS ?? [],
+      })),
+    [memberWorkspace, providerModelCatalog, t],
   );
 
   /**
@@ -164,12 +170,12 @@ export default function ProviderSelectionEmptyState({
   const handleModelSelect = useCallback(
     (providerId: LLMProvider, modelValue: string) => {
       setProvider(providerId);
-      writeSelectedProvider(providerId);
+      if (!memberWorkspace) writeSelectedProvider(providerId);
       setProviderModel(providerId, modelValue);
       setPickerOpen(false);
       setTimeout(() => textareaRef.current?.focus(), 100);
     },
-    [setProvider, setProviderModel, setPickerOpen, textareaRef],
+    [memberWorkspace, setProvider, setProviderModel, setPickerOpen, textareaRef],
   );
 
   const openModelLibrary = () => {
@@ -238,7 +244,9 @@ export default function ProviderSelectionEmptyState({
                     })}
                   </p>
                   <p className="mt-0.5 text-[11px] text-muted-foreground">
-                    {customOnlyGroupNames.length > 0
+                    {memberWorkspace
+                      ? t("providerSelection.assignedModels", { defaultValue: "Models assigned to your account" })
+                      : customOnlyGroupNames.length > 0
                       ? t("providerSelection.chooseModelDescriptionCustomOnly", {
                         providers: customOnlyGroupNames,
                       })
@@ -247,16 +255,18 @@ export default function ProviderSelectionEmptyState({
                       })}
                   </p>
                 </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={openModelLibrary}
-                  className="h-8 shrink-0 rounded-lg px-2.5 text-xs"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  {t("providerSelection.addModel", { defaultValue: "Add model" })}
-                </Button>
+                {!memberWorkspace && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={openModelLibrary}
+                    className="h-8 shrink-0 rounded-lg px-2.5 text-xs"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    {t("providerSelection.addModel", { defaultValue: "Add model" })}
+                  </Button>
+                )}
               </div>
               <Command filter={modelSearchFilter}>
                 <CommandInput

@@ -215,6 +215,14 @@ export const api = {
     user: () => get('/api/auth/user'),
   },
 
+  directoryAccess: {
+    accounts: (signal?: AbortSignal) => get('/api/directory-access/accounts', { signal }),
+    createAccount: (data: { username: string; password: string; directories: string[]; models?: string[] }) =>
+      post('/api/directory-access/accounts', data),
+    updateDirectories: (userId: number, directories: string[], models?: string[], hostWorkspaceAccess?: boolean) =>
+      put(`/api/directory-access/accounts/${userId}/directories`, { directories, models, hostWorkspaceAccess }),
+  },
+
   // Protected endpoints
   // config endpoint removed - no longer needed (frontend uses window.location)
   // After the projectName → projectId migration the path/query identifier is
@@ -276,7 +284,7 @@ export const api = {
   // owning project — used when a /session/<id> URL isn't in loaded payloads.
   sessionDetails: (sessionId: string) =>
     get(`/api/providers/sessions/${encodeURIComponent(sessionId)}`),
-  runningSessions: () => get('/api/providers/sessions/running'),
+  runningSessions: (viewedSessionId?: string) => get(`/api/providers/sessions/running${query({ viewedSessionId })}`),
   recentConversations: ({ limit = 40, offset = 0 }: { limit?: number; offset?: number } = {}) =>
     get(`/api/providers/sessions/recent${query({ limit, offset })}`),
   providerSessionId: (sessionId: string) =>

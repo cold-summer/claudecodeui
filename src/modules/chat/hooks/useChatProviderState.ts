@@ -81,6 +81,7 @@ type ProviderCapabilitiesApiResponse = {
 };
 
 type UseChatProviderStateArgs = {
+  memberWorkspace?: boolean;
   selectedSession: ProjectSession | null;
   selectedProject: Project | null;
 };
@@ -130,13 +131,15 @@ const getSessionSelectionKey = (provider: LLMProvider, sessionId: string): strin
   `${provider}:${sessionId}`
 );
 
-export function useChatProviderState({ selectedSession, selectedProject: _selectedProject }: UseChatProviderStateArgs) {
+export function useChatProviderState({
+  selectedSession, selectedProject: _selectedProject, memberWorkspace = false,
+}: UseChatProviderStateArgs) {
   const [permissionMode, setPermissionMode] = useState<PermissionMode>('default');
   const [pendingPermissionRequests, setPendingPermissionRequests] = useState<PendingPermissionRequest[]>([]);
   // The provider the composer sends under. Held here rather than read from
   // storage per render because switching it has to reset the model menu, the
   // permission mode and the session in one commit.
-  const [provider, setProvider] = useState<LLMProvider>(readSelectedProvider);
+  const [chosenProvider, setProvider] = useState<LLMProvider>(() => memberWorkspace ? 'claude' : readSelectedProvider());
   // Every provider's chosen model, not just the active one: switching provider
   // must restore the model that provider was last used with, and the catalogue
   // that validates them arrives asynchronously per provider.
@@ -168,6 +171,13 @@ export function useChatProviderState({ selectedSession, selectedProject: _select
   const [providerModelCatalog, setProviderModelCatalog] = useState<
     Partial<Record<LLMProvider, ProviderModelsDefinition>>
   >({});
+  const fallbackMemberProvider = PROVIDERS.find((candidate) => providerModelCatalog[candidate]?.OPTIONS.length);
+  const provider = memberWorkspace
+    ? selectedSession?.__provider ?? (providerModelCatalog[chosenProvider]?.OPTIONS.length ? chosenProvider : fallbackMemberProvider ?? chosenProvider)
+    : chosenProvider;
+  const memberModelOptions = useMemo(() => memberWorkspace
+    ? PROVIDERS.flatMap((candidate) => providerModelCatalog[candidate]?.OPTIONS ?? [])
+    : [], [memberWorkspace, providerModelCatalog]);
   const [providerModelsLoading, setProviderModelsLoading] = useState(true);
 
   const providerModelsRequestIdRef = useRef(0);
@@ -181,8 +191,8 @@ export function useChatProviderState({ selectedSession, selectedProject: _select
         ? previous
         : { ...previous, [targetProvider]: model }
     ));
-    localStorage.setItem(providerModelStorageKey(targetProvider), model);
-  }, []);
+    if (!memberWorkspace) localStorage.setItem(providerModelStorageKey(targetProvider), model);
+  }, [memberWorkspace]);
 
   const setStoredProviderEffort = useCallback((targetProvider: LLMProvider, effort: string) => {
     setProviderEfforts((previous) => (
@@ -364,12 +374,14 @@ export function useChatProviderState({ selectedSession, selectedProject: _select
 
       const storageKey = providerModelStorageKey(targetProvider);
       const currentModel = providerModels[targetProvider];
-      const nextModel = pickStoredOrCurrent(storageKey, currentModel, catalog);
+      const nextModel = memberWorkspace
+        ? (catalog.OPTIONS.some((option) => option.value === currentModel) ? currentModel : catalog.DEFAULT)
+        : pickStoredOrCurrent(storageKey, currentModel, catalog);
 
       if (nextModel !== currentModel) {
         reconciledModels[targetProvider] = nextModel;
       }
-      if (localStorage.getItem(storageKey) !== nextModel) {
+      if (!memberWorkspace && localStorage.getItem(storageKey) !== nextModel) {
         localStorage.setItem(storageKey, nextModel);
       }
     }
@@ -377,7 +389,7 @@ export function useChatProviderState({ selectedSession, selectedProject: _select
     if (Object.keys(reconciledModels).length > 0) {
       setProviderModels((previous) => ({ ...previous, ...reconciledModels }));
     }
-  }, [providerModelCatalog, providerModels]);
+  }, [memberWorkspace, providerModelCatalog, providerModels]);
 
   useEffect(() => {
     const nextEfforts: Partial<Record<LLMProvider, string>> = {};
@@ -402,6 +414,10 @@ export function useChatProviderState({ selectedSession, selectedProject: _select
 
   useEffect(() => {
     const validModes = getPermissionModesForProvider(provider);
+    if (memberWorkspace) {
+      setPermissionMode((current) => validModes.includes(current) ? current : getDefaultPermissionModeForProvider(provider));
+      return;
+    }
     const sessionSavedMode = selectedSession?.id
       ? (localStorage.getItem(`permissionMode-${selectedSession.id}`) as PermissionMode | null)
       : null;
@@ -414,16 +430,16 @@ export function useChatProviderState({ selectedSession, selectedProject: _select
       (mode): mode is PermissionMode => Boolean(mode && validModes.includes(mode)),
     );
     setPermissionMode(savedMode ?? getDefaultPermissionModeForProvider(provider));
-  }, [selectedSession?.id, provider, getDefaultPermissionModeForProvider, getPermissionModesForProvider]);
+  }, [memberWorkspace, selectedSession?.id, provider, getDefaultPermissionModeForProvider, getPermissionModesForProvider]);
 
   useEffect(() => {
-    if (!selectedSession?.__provider || selectedSession.__provider === provider) {
+    if (memberWorkspace || !selectedSession?.__provider || selectedSession.__provider === provider) {
       return;
     }
 
     setProvider(selectedSession.__provider);
     writeSelectedProvider(selectedSession.__provider);
-  }, [provider, selectedSession]);
+  }, [memberWorkspace, provider, selectedSession]);
 
   // Permission prompts belong to a session, not to the transient provider
   // selection that is synchronized after navigation.
@@ -435,6 +451,7 @@ export function useChatProviderState({ selectedSession, selectedProject: _select
 
   const selectPermissionMode = useCallback((nextMode: PermissionMode) => {
     setPermissionMode(nextMode);
+    if (memberWorkspace) return;
 
     // Persist per provider as well as per session: a brand-new chat has no
     // session id yet, and the per-provider key keeps the choice sticky when
@@ -443,7 +460,7 @@ export function useChatProviderState({ selectedSession, selectedProject: _select
     if (selectedSession?.id) {
       localStorage.setItem(`permissionMode-${selectedSession.id}`, nextMode);
     }
-  }, [provider, selectedSession?.id]);
+  }, [memberWorkspace, provider, selectedSession?.id]);
 
   const cyclePermissionMode = useCallback(() => {
     const modes = getPermissionModesForProvider(provider);
@@ -565,10 +582,14 @@ export function useChatProviderState({ selectedSession, selectedProject: _select
     model: string,
     sessionId?: string | null,
   ) => {
-    setStoredProviderModel(targetProvider, model);
+    const modelProvider = memberWorkspace
+      ? PROVIDERS.find((candidate) => providerModelCatalog[candidate]?.OPTIONS.some((option) => option.value === model))
+      : targetProvider;
+    if (modelProvider) setStoredProviderModel(modelProvider, model);
 
     const normalizedSessionId = typeof sessionId === 'string' ? sessionId.trim() : '';
     if (!normalizedSessionId) {
+      if (memberWorkspace && modelProvider) setProvider(modelProvider);
       return { scope: 'default' as const, model };
     }
 
@@ -605,7 +626,7 @@ export function useChatProviderState({ selectedSession, selectedProject: _select
       }));
     }
     return { scope: 'session' as const, model: storedModel };
-  }, [setStoredProviderModel]);
+  }, [memberWorkspace, providerModelCatalog, setStoredProviderModel]);
 
   /**
    * Applies an effort choice optimistically and persists it for the open
@@ -686,7 +707,12 @@ export function useChatProviderState({ selectedSession, selectedProject: _select
 
   // The open session's model wins over the per-provider default, so switching
   // sessions shows (and sends) what each session actually runs with.
-  const currentProviderModel = sessionModel ?? providerModels[provider];
+  const memberProviderModel = providerModelCatalog[provider]?.OPTIONS.some((option) => option.value === providerModels[provider])
+    ? providerModels[provider]
+    : providerModelCatalog[provider]?.DEFAULT || (fallbackMemberProvider && providerModelCatalog[fallbackMemberProvider]?.DEFAULT) || '';
+  const currentProviderModel = memberWorkspace
+    ? (sessionModel && memberModelOptions.some((option) => option.value === sessionModel) ? sessionModel : memberProviderModel)
+    : sessionModel ?? providerModels[provider];
   const currentProviderEffortOptions = useMemo(() => {
     return getEffortOptionsForModel(provider, currentProviderModel);
   }, [currentProviderModel, getEffortOptionsForModel, provider]);
@@ -700,8 +726,8 @@ export function useChatProviderState({ selectedSession, selectedProject: _select
     );
   }, [activeSessionSelection?.effort, currentProviderModel, provider, providerEfforts, reconcileStoredEffort]);
   const currentProviderModelOptions = useMemo(
-    () => providerModelCatalog[provider]?.OPTIONS ?? [],
-    [provider, providerModelCatalog],
+    () => memberWorkspace ? memberModelOptions : providerModelCatalog[provider]?.OPTIONS ?? [],
+    [memberModelOptions, memberWorkspace, provider, providerModelCatalog],
   );
 
   const applyProviderCatalog = useCallback((

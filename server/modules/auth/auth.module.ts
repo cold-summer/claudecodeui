@@ -17,6 +17,11 @@ const require = createRequire(import.meta.url);
 const bcrypt = require('bcrypt') as BcryptAdapter;
 const databaseConnection = getConnection();
 
+/** Hashes new passwords for Auth registration and administrator-created accounts in Directory Access. */
+export function hashAccountPassword(password: string): Promise<string> {
+  return bcrypt.hash(password, 12);
+}
+
 const authService = createAuthService({
   users: {
     hasUsers: () => userDb.hasUsers(),
@@ -29,7 +34,7 @@ const authService = createAuthService({
     commit: () => databaseConnection.prepare('COMMIT').run(),
     rollback: () => databaseConnection.prepare('ROLLBACK').run(),
   },
-  hashPassword: (password) => bcrypt.hash(password, 12),
+  hashPassword: hashAccountPassword,
   comparePassword: (password, passwordHash) => bcrypt.compare(password, passwordHash),
   generateToken,
 });

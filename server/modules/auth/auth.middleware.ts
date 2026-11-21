@@ -101,6 +101,16 @@ const authenticateToken = async (req, res, next) => {
   }
 };
 
+/** Protects the full workspace API and account management routes mounted by the server. */
+export const requireAdministrator = (req, res, next) => {
+  if (req.user?.role !== 'admin') {
+    return res.status(403).json({ error: 'Administrator access required' });
+  }
+  next();
+};
+
+export const authenticateAdministrator = [authenticateToken, requireAdministrator];
+
 // Generate JWT token
 const generateToken = (user) => {
   return jwt.sign(
@@ -114,7 +124,7 @@ const generateToken = (user) => {
 };
 
 // WebSocket authentication function
-const authenticateWebSocket = (token) => {
+const authenticateWebSocket = (token, pathname?: string) => {
   // Platform mode: bypass token validation, return first user
   if (IS_PLATFORM) {
     try {
@@ -136,12 +146,12 @@ const authenticateWebSocket = (token) => {
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    // Verify user actually exists in database (matches REST authenticateToken behavior)
     const user = userDb.getUserById(decoded.userId);
-    if (!user) {
-      return null;
-    }
-    return { userId: user.id, username: user.username };
+    if (!user || (user.role !== 'admin' && user.host_workspace_access !== 1 && pathname !== '/ws')) return null;
+    return {
+      userId: user.id, username: user.username, role: user.role,
+      hostWorkspaceAccess: user.host_workspace_access === 1,
+    };
   } catch (error) {
     if (!(error instanceof jwt.TokenExpiredError)) {
       console.warn(

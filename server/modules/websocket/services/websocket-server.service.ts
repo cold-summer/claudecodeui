@@ -2,6 +2,7 @@ import type { Server as HttpServer } from 'node:http';
 
 import { WebSocket, WebSocketServer, type VerifyClientCallbackSync } from 'ws';
 
+import { userDb } from '@/modules/database/index.js';
 import { handleChatConnection } from '@/modules/websocket/services/chat-websocket.service.js';
 import { verifyWebSocketClient } from '@/modules/websocket/services/websocket-auth.service.js';
 import { handlePluginWsProxy } from '@/modules/websocket/services/plugin-websocket-proxy.service.js';
@@ -13,6 +14,7 @@ type WebSocketServerDependencies = {
   verifyClient: Parameters<typeof verifyWebSocketClient>[1];
   chat: Parameters<typeof handleChatConnection>[2];
   shell: Parameters<typeof handleShellConnection>[1];
+  memberChat?: (ws: WebSocket, request: AuthenticatedWebSocketRequest) => void;
   getPluginPort: Parameters<typeof handlePluginWsProxy>[2];
 };
 
@@ -98,8 +100,23 @@ export function createWebSocketServer(
     const url = incomingRequest.url ?? '/';
     const pathname = new URL(url, 'http://localhost').pathname;
 
+    if (incomingRequest.user?.role === 'member' && incomingRequest.user.hostWorkspaceAccess !== true) {
+      if (pathname === '/ws' && dependencies.memberChat) {
+        dependencies.memberChat(ws, incomingRequest);
+      } else {
+        ws.close(1008, 'Workspace access denied');
+      }
+      return;
+    }
+
     if (pathname === '/shell') {
-      handleShellConnection(ws, dependencies.shell);
+      const userId = incomingRequest.user?.userId;
+      const checkHostAccess = incomingRequest.user?.role === 'member' && typeof userId === 'number'
+        ? () => {
+            if (userDb.getUserById(userId)?.host_workspace_access !== 1) throw new Error('Workspace access revoked');
+          }
+        : undefined;
+      handleShellConnection(ws, dependencies.shell, checkHostAccess);
       return;
     }
 

@@ -121,7 +121,7 @@ const parseBackgroundTasks = (value: unknown): BackgroundTaskSummary[] | undefin
 };
 
 /** Mounted by the project-workspace route; tracks which sessions are busy — producing a response or running background tasks — so chat, sidebar and project-workspace agree on session activity. */
-export function SessionProtectionProvider({ children }: { children: ReactNode }) {
+export function SessionProtectionProvider({ children, viewedSessionId }: { children: ReactNode; viewedSessionId?: string }) {
   const {
     processingSessions,
     markSessionProcessing,
@@ -134,7 +134,7 @@ export function SessionProtectionProvider({ children }: { children: ReactNode })
 
   const refreshRunningSessions = useCallback(async () => {
     try {
-      const response = await api.runningSessions();
+      const response = await api.runningSessions(viewedSessionId);
       if (!response.ok) {
         return;
       }
@@ -163,7 +163,7 @@ export function SessionProtectionProvider({ children }: { children: ReactNode })
     } catch (error) {
       console.error('[SessionProtection] Failed to sync running sessions:', error);
     }
-  }, [syncProcessingSessions]);
+  }, [syncProcessingSessions, viewedSessionId]);
 
   useEffect(() => {
     void refreshRunningSessions();

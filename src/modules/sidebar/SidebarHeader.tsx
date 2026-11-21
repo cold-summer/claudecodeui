@@ -31,8 +31,8 @@ type SidebarHeaderProps = {
   t: TFunction;
 };
 
-/** Module-level, not a nested render function, so the wordmark is not remounted on every SidebarHeader render. */
-function LogoBlock({ t }: { t: TFunction }) {
+/** Renders the CloudCLI wordmark in the sidebar. */
+function SidebarLogo({ t }: { t: TFunction }) {
   return (
     <div className="flex min-w-0 items-center gap-2.5">
       <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-primary/90 shadow-sm">
@@ -93,10 +93,10 @@ export default function SidebarHeader({
               className="flex min-w-0 items-center gap-2.5 transition-opacity hover:opacity-80"
               title={t('tooltips.viewEnvironments')}
             >
-              <LogoBlock t={t} />
+              <SidebarLogo t={t} />
             </a>
           ) : (
-            <LogoBlock t={t} />
+            <SidebarLogo t={t} />
           )}
 
           <div className="flex flex-shrink-0 items-center gap-0.5">
@@ -194,10 +194,10 @@ export default function SidebarHeader({
               className="flex min-w-0 items-center gap-2.5 transition-opacity active:opacity-70"
               title={t('tooltips.viewEnvironments')}
             >
-              <LogoBlock t={t} />
+              <SidebarLogo t={t} />
             </a>
           ) : (
-            <LogoBlock t={t} />
+            <SidebarLogo t={t} />
           )}
 
           <div className="flex flex-shrink-0 gap-1.5">

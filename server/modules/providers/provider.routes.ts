@@ -1,5 +1,6 @@
 import express, { type Request, type Response } from 'express';
 
+import { getSidebarProjectPaths, getWorkspaceAccount } from '@/modules/auth/index.js';
 import { providerAuthService } from '@/modules/providers/services/provider-auth.service.js';
 import { claudeSettingsPermissionsService } from '@/modules/providers/services/claude-settings-permissions.service.js';
 import { providerCapabilitiesService } from '@/modules/providers/services/provider-capabilities.service.js';
@@ -909,8 +910,11 @@ router.post(
 
 router.get(
   '/sessions/running',
-  asyncHandler(async (_req: Request, res: Response) => {
-    const sessions = await sessionsService.listRunningSessions();
+  asyncHandler(async (req: Request, res: Response) => {
+    const sessions = await sessionsService.listRunningSessions({
+      allowedPaths: getSidebarProjectPaths(req),
+      viewedSessionId: readOptionalQueryString(req.query.viewedSessionId),
+    });
     res.json(createApiSuccessResponse({ sessions }));
   }),
 );
@@ -920,15 +924,16 @@ router.get(
   asyncHandler(async (req: Request, res: Response) => {
     const limit = parseBoundedIntegerQuery(req.query.limit, 'limit', 40, 1, 100);
     const offset = parseBoundedIntegerQuery(req.query.offset, 'offset', 0, 0);
-    const page = sessionsService.listRecentSessions(limit, offset);
+    const allowedPaths = getSidebarProjectPaths(req);
+    const page = sessionsService.listRecentSessions(limit, offset, allowedPaths && [...allowedPaths]);
     res.json(createApiSuccessResponse(page));
   }),
 );
 
 router.get(
   '/sessions/archived',
-  asyncHandler(async (_req: Request, res: Response) => {
-    const sessions = sessionsService.listArchivedSessions();
+  asyncHandler(async (req: Request, res: Response) => {
+    const sessions = sessionsService.listArchivedSessions(getSidebarProjectPaths(req));
     res.json(createApiSuccessResponse({ sessions }));
   }),
 );
@@ -1041,9 +1046,11 @@ router.get(
     const limit = parseBoundedIntegerQuery(req.query.limit, 'limit', null, 0);
     const offset = parseBoundedIntegerQuery(req.query.offset, 'offset', 0, 0);
 
+    const user = getWorkspaceAccount(req);
     const result = await sessionsService.fetchHistory(sessionId, {
       limit,
       offset,
+      legacyMemberUserId: user?.role === 'member' ? user.id : undefined,
     });
     // The session's whole side-question list, on every page: side questions
     // are not part of the paged transcript, and the client wants to draw
@@ -1091,6 +1098,7 @@ router.get('/search/sessions', asyncHandler(async (req: Request, res: Response) 
     await sessionConversationsSearchService.search({
       query,
       limit,
+      allowedPaths: getSidebarProjectPaths(req),
       signal: abortController.signal,
       onTitleResults: (titleResults) => {
         if (!closed) {

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
+import { useAuth } from '@/modules/auth';
 import { ProviderLoginModal } from '@/modules/provider-auth';
 import { Button } from '@/shared/ui';
 import SettingsSidebar from '@/modules/settings/SettingsSidebar';
@@ -15,9 +16,11 @@ import NotificationsSettingsTab from '@/modules/settings/tabs/NotificationsSetti
 import TasksSettingsTab from '@/modules/settings/tabs/tasks-settings/TasksSettingsTab';
 import { PluginSettingsTab } from '@/modules/plugins';
 import AboutTab from '@/modules/settings/tabs/AboutTab';
+import DirectoryAccountsTab from '@/modules/settings/tabs/DirectoryAccountsTab';
 import { useSettingsController } from '@/modules/settings/hooks/useSettingsController';
 import { useWebPush } from '@/modules/settings/hooks/useWebPush';
 import type { AgentSettingsProject } from '@/shared/types';
+import { IS_PLATFORM } from '@/shared/utils';
 
 type SettingsProps = {
   isOpen: boolean;
@@ -37,6 +40,7 @@ type DesktopNotificationsState = {
 /** Exported as the settings module's public entry point and rendered by the sidebar module as its settings dialog. */
 function Settings({ isOpen, onClose, projects = [], initialTab = 'agents' }: SettingsProps) {
   const { t } = useTranslation('settings');
+  const { user, logout } = useAuth();
   const desktopNotificationsBridge = useMemo(() => (
     typeof window === 'undefined'
       ? null
@@ -199,6 +203,11 @@ function Settings({ isOpen, onClose, projects = [], initialTab = 'agents' }: Set
         <div className="flex flex-shrink-0 items-center justify-between border-b border-border px-4 py-3 md:px-5">
           <h2 className="text-base font-semibold text-foreground">{t('title')}</h2>
           <div className="flex items-center gap-2">
+            {user?.role === 'member' && (
+              <Button variant="ghost" size="sm" onClick={logout}>
+                {t('directoryAccess.logout')}
+              </Button>
+            )}
             {saveStatus === 'success' && (
               <span className="animate-in fade-in text-xs text-muted-foreground">{t('saveStatus.success')}</span>
             )}
@@ -273,6 +282,8 @@ function Settings({ isOpen, onClose, projects = [], initialTab = 'agents' }: Set
               {activeTab === 'voice' && <VoiceSettingsTab />}
 
               {activeTab === 'plugins' && <PluginSettingsTab />}
+
+              {activeTab === 'users' && !IS_PLATFORM && <DirectoryAccountsTab />}
 
               {activeTab === 'about' && <AboutTab />}
             </div>

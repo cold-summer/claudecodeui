@@ -28,6 +28,7 @@ import { BackgroundTasksStrip } from '@/modules/chat/transcript/BackgroundTasksS
 const INITIAL_MOUNTED_TAIL_ROWS = 30;
 
 type ChatMessagesPaneProps = {
+  memberWorkspace?: boolean;
   scrollContainerRef: RefObject<HTMLDivElement>;
   onWheel: () => void;
   onTouchMove: () => void;
@@ -99,6 +100,7 @@ const getGroupedMessageKey = (message: ChatMessage): string =>
  * load-all-history overlay.
  */
 function ChatMessagesPane({
+  memberWorkspace,
   scrollContainerRef,
   onWheel,
   onTouchMove,
@@ -229,6 +231,7 @@ function ChatMessagesPane({
         </div>
       ) : chatMessages.length === 0 ? (
         <ProviderSelectionEmptyState
+          memberWorkspace={memberWorkspace}
           selectedSession={selectedSession}
           currentSessionId={currentSessionId}
           provider={provider}

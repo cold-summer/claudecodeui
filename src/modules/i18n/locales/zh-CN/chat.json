@@ -118,6 +118,14 @@
     },
     "technicalDetails": "技术细节"
   },
+  "memberPermissions": {
+    "bypassLabel": "免确认模式",
+    "default": "自动读取项目文件。写入文件和执行命令前需要确认。",
+    "acceptEdits": "自动编辑项目文件。执行终端命令前需要确认。",
+    "bypassPermissions": "在项目沙盒内免确认读取、写入和执行命令。",
+    "auto": "自动读取和编辑项目文件，终端命令停用。",
+    "plan": "仅制定计划，暂停使用项目工具。"
+  },
   "voice": {
     "input": "语音输入",
     "stopRecording": "停止录音",
@@ -155,6 +163,9 @@
     }
   },
   "providerSelection": {
+    "noAssignedModels": "管理员尚未给这个账号分配模型。",
+    "assignedModels": "此账号获准使用的模型",
+    "otherModels": "其他模型",
     "title": "选择您的 AI 助手",
     "description": "选择一个供应商以开始新对话",
     "selectModel": "选择模型",

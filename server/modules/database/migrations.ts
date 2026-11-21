@@ -3,6 +3,7 @@ import { Database } from 'better-sqlite3';
 import {
   APP_CONFIG_TABLE_SCHEMA_SQL,
   LAST_SCANNED_AT_SQL,
+  MEMBER_CHAT_TURNS_TABLE_SCHEMA_SQL,
   NOTIFICATION_CHANNEL_ENDPOINTS_TABLE_SCHEMA_SQL,
   PROJECTS_TABLE_SCHEMA_SQL,
   PROVIDER_MODELS_TABLE_SCHEMA_SQL,
@@ -514,6 +515,12 @@ export const runMigrations = (db: Database) => {
       'has_completed_onboarding',
       'BOOLEAN DEFAULT 0'
     );
+    addColumnToTableIfNotExists(db, 'users', userColumnNames, 'role',
+      "TEXT NOT NULL DEFAULT 'admin' CHECK (role IN ('admin', 'member'))");
+    addColumnToTableIfNotExists(db, 'users', userColumnNames, 'allowed_directories', "TEXT NOT NULL DEFAULT '[]'");
+
+    addColumnToTableIfNotExists(db, 'users', userColumnNames, 'allowed_models', 'TEXT');
+    addColumnToTableIfNotExists(db, 'users', userColumnNames, 'host_workspace_access', 'INTEGER NOT NULL DEFAULT 0');
 
     db.exec(APP_CONFIG_TABLE_SCHEMA_SQL);
     db.exec(USER_NOTIFICATION_PREFERENCES_TABLE_SCHEMA_SQL);
@@ -546,6 +553,20 @@ export const runMigrations = (db: Database) => {
     addSessionEffortColumn(db);
     addForkedFromSessionIdColumn(db);
     ensureProjectsForSessionPaths(db);
+    db.exec(MEMBER_CHAT_TURNS_TABLE_SCHEMA_SQL);
+    const memberTurnColumns = (db.prepare('PRAGMA table_info(member_chat_turns)').all() as TableInfoRow[])
+      .map((column) => column.name);
+    db.transaction(() => {
+      addColumnToTableIfNotExists(db, 'member_chat_turns', memberTurnColumns, 'recorded_at', 'TEXT');
+      db.exec(`
+        UPDATE member_chat_turns
+        SET recorded_at = (
+          SELECT strftime('%Y-%m-%dT%H:%M:%fZ', COALESCE(s.updated_at, s.created_at))
+          FROM sessions s WHERE s.session_id = member_chat_turns.session_id
+        )
+        WHERE recorded_at IS NULL
+      `);
+    })();
     db.exec(SCHEDULED_MESSAGES_TABLE_SCHEMA_SQL);
 
     db.exec('CREATE INDEX IF NOT EXISTS idx_session_ids_lookup ON sessions(session_id)');

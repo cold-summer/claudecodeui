@@ -11,6 +11,8 @@ import { hydrateUserPreferences, resetUserPreferences } from '@/shared/userSetti
 type AuthUser = {
   id?: number | string;
   username: string;
+  role?: 'admin' | 'member';
+  hostWorkspaceAccess?: boolean;
   [key: string]: unknown;
 };
 
@@ -112,7 +114,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   // Preferences live in auth.db, so they can only be fetched once there is a
   // user to fetch them for. Until this resolves, every reader falls back to the
   // localStorage mirror of the last known server state.
-  const userKey = user ? String(user.id ?? user.username) : null;
+  const userKey = user && (user.role !== 'member' || user.hostWorkspaceAccess) ? String(user.id ?? user.username) : null;
   useEffect(() => {
     if (!userKey) {
       return;
@@ -230,7 +232,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
 
       setUser(userPayload.user);
-      await checkOnboardingStatus();
+      if (userPayload.user.role !== 'member') await checkOnboardingStatus();
     } catch (caughtError) {
       console.error('[Auth] Auth status check failed:', caughtError);
       setError(tRef.current(AUTH_ERROR_MESSAGES.authStatusCheckFailed));
@@ -293,7 +295,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   // because that request reads it from storage.
   const publishSession = useCallback(async (nextUser: AuthUser, nextToken: string) => {
     persistToken(nextToken);
-    await checkOnboardingStatus();
+    if (nextUser.role !== 'member') await checkOnboardingStatus();
     setUser(nextUser);
     setToken(nextToken);
     setNeedsSetup(false);

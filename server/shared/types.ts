@@ -22,6 +22,41 @@ export type ApiSuccessShape<TData = unknown> = {
 export type AnyRecord = Record<string, any>;
 
 // ---------------------------
+//----------------- ACCOUNT ACCESS TYPES ------------
+/** Administrators use the full workspace. Members can browse assigned directories. */
+export type AccountRole = 'admin' | 'member';
+
+/** Member grants. A null model list inherits the server's default model for existing accounts. */
+export type DirectoryMember = {
+  id: number;
+  username: string;
+  directories: string[];
+  models: string[] | null;
+  hostWorkspaceAccess: boolean;
+};
+
+/** A text model offered by the configured member gateway and grouped in the workspace picker. */
+export type MemberModelOption = { id: string; label: string; provider: LLMProvider };
+
+/** A member's persisted prompt and reply in their conversation within a shared project. */
+export type MemberChatTurn = { id: number; prompt: string; reply: string };
+
+/** Text-only conversation context sent to the configured model for a member reply. */
+export type MemberChatMessage = { role: 'user' | 'assistant'; content: string };
+
+export type MemberPermissionMode = 'default' | 'auto' | 'acceptEdits' | 'bypassPermissions' | 'plan';
+
+/** The private member turn's project boundary, execution policy and approval callbacks. */
+export type MemberChatRun = {
+  projectPath: string;
+  permissionMode: MemberPermissionMode;
+  hostWorkspaceAccess: boolean;
+  signal: AbortSignal;
+  checkAccess(): void;
+  approve(toolName: string, input: Record<string, unknown>): Promise<boolean>;
+};
+
+// ---------------------------
 //----------------- WEBSOCKET TRANSPORT TYPES ------------
 /**
  * Minimal websocket client contract used by backend broadcaster services.

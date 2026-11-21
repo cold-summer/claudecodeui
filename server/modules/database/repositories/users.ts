@@ -1,12 +1,11 @@
 /**
  * User repository.
  *
- * Provides typed CRUD operations for the `users` table.
- * This is a single-user system, but the schema supports multiple
- * users for forward compatibility.
+ * Provides typed CRUD operations for administrator and member accounts.
  */
 
 import { getConnection } from '@/modules/database/connection.js';
+import type { AccountRole, DirectoryMember } from '@/shared/types.js';
 
 type UserRow = {
   id: number;
@@ -18,9 +17,11 @@ type UserRow = {
   git_name: string | null;
   git_email: string | null;
   has_completed_onboarding: number;
+  role: AccountRole;
+  host_workspace_access: number;
 };
 
-type UserPublicRow = Pick<UserRow, 'id' | 'username' | 'created_at' | 'last_login'>;
+type UserPublicRow = Pick<UserRow, 'id' | 'username' | 'created_at' | 'last_login' | 'role' | 'host_workspace_access'>;
 
 type UserGitConfig = {
   git_name: string | null;
@@ -36,6 +37,7 @@ type CreateUserResult = {
 // Queries
 // ---------------------------------------------------------------------------
 
+/** Persists and resolves accounts for Auth, User, Agent, and Directory Access. */
 export const userDb = {
   /** Returns true if at least one user exists in the database. */
   hasUsers(): boolean {
@@ -55,14 +57,63 @@ export const userDb = {
     return { id: result.lastInsertRowid, username };
   },
 
+  listDirectoryMembers(): DirectoryMember[] {
+    const rows = getConnection().prepare(`
+      SELECT id, username, allowed_directories, allowed_models, host_workspace_access FROM users
+      WHERE role = 'member' ORDER BY username, id
+    `).all() as (Pick<UserRow, 'id' | 'username' | 'host_workspace_access'> & {
+      allowed_directories: string; allowed_models: string | null;
+    })[];
+    return rows.map(({ id, username, allowed_directories, allowed_models, host_workspace_access }) => ({
+      id, username, directories: JSON.parse(allowed_directories) as string[],
+      models: allowed_models === null ? null : JSON.parse(allowed_models) as string[],
+      hostWorkspaceAccess: host_workspace_access === 1,
+    }));
+  },
+
+  createDirectoryMember(username: string, passwordHash: string, directories: string[], models: string[] | null = null): DirectoryMember {
+    // Older CloudCLI builds use is_active as their only workspace access check.
+    // Keep members ineligible in those builds, including through existing JWTs.
+    const result = getConnection().prepare(`
+      INSERT INTO users (username, password_hash, is_active, role, allowed_directories, allowed_models)
+      VALUES (?, ?, 0, 'member', ?, ?)
+    `).run(username, passwordHash, JSON.stringify(directories), models === null ? null : JSON.stringify(models));
+    return { id: Number(result.lastInsertRowid), username, directories, models, hostWorkspaceAccess: false };
+  },
+
+  updateMemberDirectories(userId: number, directories: string[], models?: string[], hostWorkspaceAccess?: boolean): boolean {
+    const result = getConnection().prepare(`
+      UPDATE users SET allowed_directories = ?, allowed_models = COALESCE(?, allowed_models),
+        host_workspace_access = COALESCE(?, host_workspace_access)
+      WHERE id = ? AND role = 'member'
+    `).run(
+      JSON.stringify(directories), models === undefined ? null : JSON.stringify(models),
+      hostWorkspaceAccess === undefined ? null : Number(hostWorkspaceAccess), userId,
+    );
+    return result.changes > 0;
+  },
+
+  getMemberDirectories(userId: number): string[] {
+    const row = getConnection().prepare(`
+      SELECT allowed_directories FROM users WHERE id = ? AND role = 'member'
+    `).get(userId) as { allowed_directories: string } | undefined;
+    return row ? JSON.parse(row.allowed_directories) as string[] : [];
+  },
+
+  getMemberModels(userId: number): string[] | null {
+    const row = getConnection().prepare("SELECT allowed_models FROM users WHERE id = ? AND role = 'member'")
+      .get(userId) as { allowed_models: string | null } | undefined;
+    return row?.allowed_models == null ? null : JSON.parse(row.allowed_models) as string[];
+  },
+
   /**
-   * Looks up an active user by username.
+   * Looks up a sign-in account by username.
    * Returns the full row (including password hash) for auth verification.
    */
   getUserByUsername(username: string): UserRow | undefined {
     const db = getConnection();
     return db
-      .prepare('SELECT * FROM users WHERE username = ? AND is_active = 1')
+      .prepare("SELECT * FROM users WHERE username = ? AND (is_active = 1 OR role = 'member')")
       .get(username) as UserRow | undefined;
   },
 
@@ -84,17 +135,17 @@ export const userDb = {
     const db = getConnection();
     return db
       .prepare(
-        'SELECT id, username, created_at, last_login FROM users WHERE id = ? AND is_active = 1'
+        "SELECT id, username, created_at, last_login, role, host_workspace_access FROM users WHERE id = ? AND (is_active = 1 OR role = 'member')"
       )
       .get(userId) as UserPublicRow | undefined;
   },
 
-  /** Returns the first active user. Used for single-user mode lookups. */
+  /** Returns the first active administrator for the platform's implicit account. */
   getFirstUser(): UserPublicRow | undefined {
     const db = getConnection();
     return db
       .prepare(
-        'SELECT id, username, created_at, last_login FROM users WHERE is_active = 1 LIMIT 1'
+        "SELECT id, username, created_at, last_login, role, host_workspace_access FROM users WHERE is_active = 1 AND role = 'admin' ORDER BY id LIMIT 1"
       )
       .get() as UserPublicRow | undefined;
   },

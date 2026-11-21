@@ -20,6 +20,15 @@ function decodePreference(row: PreferenceRow): [string, unknown] | null {
 }
 
 export const userPreferencesDb = {
+  /** Looks up a single preference without loading the user's other settings. */
+  getPreference(userId: number, key: string): unknown {
+    const row = getConnection().prepare(`
+      SELECT preference_key, preference_value FROM user_preferences
+      WHERE user_id = ? AND preference_key = ?
+    `).get(userId, key) as PreferenceRow | undefined;
+    return row ? decodePreference(row)?.[1] : undefined;
+  },
+
   /**
    * Returns every preference the user has ever set, as one object.
    *
